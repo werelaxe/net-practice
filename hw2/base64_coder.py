@@ -4,7 +4,7 @@
 import string
 
 
-def get_binary_code(c : str):
+def get_binary_code(c: str):
     if c in string.ascii_uppercase:
         return bin(ord(c) - ord('A'))[2:].zfill(6)
     elif c in string.ascii_lowercase:
