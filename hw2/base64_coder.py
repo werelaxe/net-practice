@@ -23,8 +23,7 @@ def get_binary_code(c: str):
 
 def decode_from_base64(source: str):
     pre_data = ''.join(get_binary_code(c) for c in source)
-    return ''.join(chr(int(pre_data[index * 8:index * 8 + 8], 2))
-                   for index in range(len(pre_data) // 8))
+    return bytes((int(pre_data[index * 8:index * 8 + 8], 2)) for index in range(len(pre_data) // 8))
 
 
 def main():
