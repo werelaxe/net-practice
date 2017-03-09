@@ -1,21 +1,21 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
-
-import socket
-
-HOST = '127.0.0.1'
-PORT = 31337
-
-
-def main():
-    connection = socket.create_connection((HOST, PORT))
-    connection.send(b'194.226.242.1\r\n')
-    while True:
-        buff = connection.recv(4096).decode()
-        if not buff:
-            break
-        print(buff)
+import datetime
+from contextlib import closing
+from socket import socket, AF_INET, SOCK_DGRAM
+import sys
+import struct
+import datetime
+import time
 
 
-if __name__ == '__main__':
-    main()
+def get_time():
+    with closing(socket(AF_INET, SOCK_DGRAM)) as s:
+        s.connect(("pool.ntp.org", 123))
+        s.send(struct.pack("BBBBLLLLL", 35, 0, 0, 0, 0, 0, 0, 0, 0))
+        data = s.recv(2048)
+        data = data[40:44]
+        net_time = struct.unpack("!L", data)
+        return net_time
+
+c_time = get_time()[0] - 2208988800
+
+print(datetime.datetime.fromtimestamp(c_time))
