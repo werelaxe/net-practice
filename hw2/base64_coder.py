@@ -18,7 +18,7 @@ def get_binary_code(c: str):
     elif c == '=':
         return ''
     else:
-        raise ValueError("Uexpected char: {}".format(c))
+        raise ValueError("Unexpected char: {}".format(c))
 
 
 def decode_from_base64(source: str):
