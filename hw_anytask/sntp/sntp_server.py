@@ -29,7 +29,9 @@ def create_packet(receive_time, client_parameters, delay):
     poll = client_parameters['poll']
     precision = 1
     origin_time = client_parameters['origin']
-    sntp_packet = struct.pack(SNTP_PACKET_FORMAT, header, stratum, poll, precision, origin_time, receive_time, get_false_time(delay))
+    sntp_packet = struct.pack(SNTP_PACKET_FORMAT, header, stratum, poll,
+                              precision, origin_time,
+                              receive_time, get_false_time(delay))
     return sntp_packet
 
 
