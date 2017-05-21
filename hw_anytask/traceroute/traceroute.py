@@ -82,7 +82,8 @@ def ping_request(destination, ttl, packet_size, ipv4_adress):
     node_finish_time = None
     reciever = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
     reciever.bind((ipv4_adress, 43))
-    reciever.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
+    if "linux" not in sys.platform:
+        reciever.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
     sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sender.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
     reciever.settimeout(1)
