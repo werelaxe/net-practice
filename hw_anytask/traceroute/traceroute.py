@@ -13,6 +13,7 @@ WHOIS_PORT = 43
 LOCAL_IP_PATTERN = "192\.168(\.\d{1,3}){2}|10(\.\d{1,3}){3}|172\.16(\.\d{1,3}){2}"
 
 
+
 def get_whois_addr(ip_addr):
     res = whois_request(ip_addr)
     return re.findall("refer.*", res)[0].split()[1]
@@ -76,13 +77,15 @@ def gethostbyaddr(ip_addr):
         return None
 
 
-def ping_request(destination, ttl, packet_size):
+def ping_request(destination, ttl, packet_size, ipv4_adress):
+
     node_finish_time = None
     reciever = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    reciever.bind((ipv4_adress, 43))
+    reciever.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sender.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
     reciever.settimeout(1)
-    reciever.bind(("", TRACEROUTE_PORT))
     node_start_time = time.time()
     sender.sendto(b"a" * packet_size, (destination, TRACEROUTE_PORT))
     hop_addr = None
@@ -109,7 +112,7 @@ def ping_request(destination, ttl, packet_size):
     return ttl, hop_name, hop_addr, ip_info, (node_finish_time - node_start_time) * 1000, hop_addr == destination
 
 
-def traceroute(target, max_hops=32, packet_size=60):
+def traceroute(ipv4_adress, target, max_hops=32, packet_size=60):
     try:
         destination = socket.gethostbyname(target)
     except socket.gaierror:
@@ -117,7 +120,7 @@ def traceroute(target, max_hops=32, packet_size=60):
         sys.exit(0)
     print("traceroute to {} ({}), {} hops max, {} byte packets".format(target, destination, max_hops, packet_size))
     for ttl in range(1, max_hops + 1):
-        ping_result = ping_request(destination, ttl, packet_size)
+        ping_result = ping_request(destination, ttl, packet_size, ipv4_adress)
         print(" {} {} ({}) {}{:0.2f} ms".format(*ping_result[:-1]))
         if ping_result[-1]:
             break
@@ -129,7 +132,10 @@ def main():
     parser.add_argument("target", action="store", help="target")
     parser.add_argument("-m", "--max-hops", type=int, action="store", default=32)
     args = vars(parser.parse_args(sys.argv[1:]))
-    traceroute(args["target"], args["max_hops"])
+    ipv4_adress = ""
+    with socket.create_connection(("google.com", 80)) as connection:
+        ipv4_adress = connection.getsockname()[0]
+    traceroute(ipv4_adress, args["target"], args["max_hops"])
 
 
 if __name__ == '__main__':
