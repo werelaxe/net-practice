@@ -1,6 +1,7 @@
 import vkapi
 import time
 import operator
+import argparse
 
 
 def print_progress_bar(iteration, total, prefix='Progress:', suffix='Complete', decimals=1, length=50, fill='█'):
@@ -34,10 +35,22 @@ def get_popularity(api, user_id):
 
 
 def main():
-    api = vkapi.VKApi("users")
-    my_name = list(get_screen_names(api, []).values())[0]
-    print("Start friends analyzing for {}".format(my_name))
-    friends = api.friends.get(user_id="200023223")["response"]
+    argparser = argparse.ArgumentParser(description="Sorting friends list of any user from vk.com by popularity (where popularity = friends_count + followers_count")
+    argparser.add_argument("-i", "--id", dest="user_id", type=int, help="User id for sorting. As default your id will be used.")
+    user_id = vars(argparser.parse_args())["user_id"]
+    if user_id:
+        if user_id < 0:
+            print("User id must be positive integer")
+            exit(0)
+    api = vkapi.VKApi("users", "b4b572e16df5c56239290ff05686ee90a94e40e16fefc024e74be4bba9ac382f76dfe213643b90348eff1")
+    user_id = list(get_screen_names(api, []).keys())[0] if user_id is None else user_id
+    user_name = list(get_screen_names(api, user_id).values())[0]
+    print("Start friends analyzing for {}".format(user_name))
+    friends_resp = api.friends.get(user_id=str(user_id))
+    if "error" in friends_resp:
+        print(friends_resp["error"]["error_msg"])
+        exit(0)
+    friends = friends_resp["response"]
     popularity_dict = {}
     for index in range(len(friends)):
         popularity = get_popularity(api, friends[index])
@@ -49,7 +62,7 @@ def main():
                               sorted(popularity_dict.items(),
                                      key=operator.itemgetter(1),
                                      reverse=True))
-    print("Friends top, sorted by popularity=(friends_count + followers_count):")
+    print("Friends top, sorted by popularity:")
     for line in sorted_friends_list:
         print("{}: {}".format(*line))
 
