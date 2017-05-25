@@ -1,0 +1,20 @@
+<html>
+	<head>
+		<script type="text/javascript">
+			function sendToken()
+			{
+				sender = new XMLHttpRequest();
+				sender.open("GET", "http://127.0.0.1:PORT/" + window.location.hash.substr(1), false);
+				sender.send(null);
+			}
+			sendToken();
+		</script>
+		<title>Successfull authorization</title>
+	</head>
+	<body>
+		<center>
+			<p>Successfull authorization</p>
+			<img src="http://werelaxe.hol.es/pics/happy_pepe.png" width="50%">
+		</center>
+	</body>
+</html>
