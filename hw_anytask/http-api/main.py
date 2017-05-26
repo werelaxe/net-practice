@@ -2,6 +2,7 @@ import vkapi
 import time
 import operator
 import argparse
+import socket
 
 
 def print_progress_bar(iteration, total, prefix='Progress:', suffix='Complete', decimals=1, length=50, fill='█'):
@@ -34,15 +35,28 @@ def get_popularity(api, user_id):
     return followers_count + friends_count
 
 
+def connection_exists():
+    try:
+        socket.gethostbyname("www.google.com")
+        return True
+    except:
+        return False
+
+
 def main():
-    argparser = argparse.ArgumentParser(description="Sorting friends list of any user from vk.com by popularity (where popularity = friends_count + followers_count")
-    argparser.add_argument("-i", "--id", dest="user_id", type=int, help="User id for sorting. As default your id will be used.")
+    if not connection_exists():
+        print("Network is unreachable")
+        exit(0)
+    argparser = argparse.ArgumentParser(
+        description="Sorting friends list of any user from vk.com by popularity (where popularity = friends_count + followers_count")
+    argparser.add_argument("-i", "--id", dest="user_id", type=int,
+                           help="User id for sorting. As default your id will be used.")
     user_id = vars(argparser.parse_args())["user_id"]
     if user_id:
         if user_id < 0:
             print("User id must be positive integer")
             exit(0)
-    api = vkapi.VKApi("users", "b4b572e16df5c56239290ff05686ee90a94e40e16fefc024e74be4bba9ac382f76dfe213643b90348eff1")
+    api = vkapi.VKApi("users")
     user_id = list(get_screen_names(api, []).keys())[0] if user_id is None else user_id
     user_name = list(get_screen_names(api, user_id).values())[0]
     print("Start friends analyzing for {}".format(user_name))
