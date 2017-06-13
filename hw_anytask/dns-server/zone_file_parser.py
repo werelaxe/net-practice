@@ -35,6 +35,13 @@ def parse_zone_file(zone_file):
                 yield parse_line(check_res)
 
 
+def get_record(domain_name, rtype, zone_list):
+    for record in zone_list:
+        if record[0] == rtype:
+            if record[1]["domain_name"] == domain_name:
+                yield domain_name, rtype, "IN", record[1]["rdata"]
+
+
 def main():
     parse_zone_file(open("usaaa.ru"))
 

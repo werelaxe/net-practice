@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import socket
 import struct
 import binascii
-
+from zone_file_parser import parse_zone_file, get_record
 import time
 
 DNS_DEFAULT_PORT = 53
@@ -14,6 +14,7 @@ BUFFER_SIZE = 64 * 1024
 MAX_WORKERS = 256
 QNAME_CODES = {1: "A", 2: "NS", 5: "CNAME", 12: "PTR", 13: "HINFO", 15: "MX", 252: "AXFR", 255: "ANY"}
 QCLASS_CODES = {1: "IN"}
+ZONE_LIST = list(parse_zone_file(open("usaaa.ru")))
 
 
 def get_mask_val(data, mask: str) -> int:
@@ -28,6 +29,7 @@ def nice_hex(data):
 
 class DNSPacket:
     def from_bytes(self, data, transport_protocol):
+        self.data = data
         # print(nice_hex(data))
         if transport_protocol.lower() == "tcp":
             self.message_len = struct.unpack("!H", data[:2])
@@ -48,24 +50,39 @@ class DNSPacket:
         self.rcode = get_mask_val(right_options,                       "00001111")
         self.qdcount, self.ancount, self.nscount, self.arcount = struct.unpack("!HHHH", data[4:4 + 8])
         data = data[12:]
-        qname = b""
-        while True:
-            part_len = data[0]
-            if not part_len:
-                break
-            qname += data[1:1 + part_len] + b"."
-            data = data[1 + part_len:]
-        data = data[1:]
-        self.qname = qname
-        self.qtype = QNAME_CODES[struct.unpack("!H", data[:2])[0]]
-        self.qclass = QCLASS_CODES[struct.unpack("!H", data[2:4])[0]]
-        data = data[4:]
-        print(data)
 
+        self.questions = []
+        self.answers = []
+        self.authority_records = []  # not supported
+        self.addition_section = []  # not supported
+        for index in range(self.qdcount):
+            qname = b""
+            while True:
+                part_len = data[0]
+                if not part_len:
+                    break
+                qname += data[1:1 + part_len] + b"."
+                data = data[1 + part_len:]
+            data = data[1:]
+            qtype = QNAME_CODES[struct.unpack("!H", data[:2])[0]]
+            qclass = QCLASS_CODES[struct.unpack("!H", data[2:4])[0]]
+            self.questions.append((qname.decode(), qtype, qclass))
+            data = data[4:]
+
+    @staticmethod
+    def pack_answer_record():
     def __str__(self):
         attrs = filter(lambda x: "__" not in x, dir(self))
         return "\n".join("{} = {}".format(attr, getattr(self, attr))
                          for attr in attrs if not getattr(getattr(self, attr), "__call__", False))
+
+    def create_answer(self, zone_file):
+        for question in self.questions:
+            print(list(get_record(question[0], question[1], parse_zone_file(zone_file))))
+        data = bytearray(self.data)
+        data[2] |= 128
+        data[3] &= 127  # RCODE is here
+        # data[6:8] = struct.pack("!H", len(self.answers))
 
 
 def process_udp_client(server_socket, data, address):
@@ -73,6 +90,8 @@ def process_udp_client(server_socket, data, address):
         server_socket.sendto(data, address)
         packet = DNSPacket()
         packet.from_bytes(data, "UDP")
+        packet.create_answer(open("usaaa.ru"))
+        server_socket.sendto(data, address)
         print(packet)
     except Exception:
         print(traceback.format_exc())
@@ -124,7 +143,6 @@ def main():
         server_handler.submit(start_dns_server_with_tcp)
         server_handler.submit(start_dns_server_with_udp)
         # server_handler.submit(wait_clients)
-
 
 if __name__ == "__main__":
     main()
