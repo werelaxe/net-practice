@@ -1,4 +1,3 @@
-import socket
 import re
 
 SUPPORTED_RECORDS = {"SOA", "NS", "A", "AAAA", "CNAME", "MX"}
