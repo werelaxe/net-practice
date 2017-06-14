@@ -12,8 +12,10 @@ DNS_DEFAULT_PORT = 53
 PORT = DNS_DEFAULT_PORT
 BUFFER_SIZE = 64 * 1024
 MAX_WORKERS = 256
-QNAME_CODES = {1: "A", 2: "NS", 5: "CNAME", 12: "PTR", 13: "HINFO", 15: "MX", 252: "AXFR", 255: "ANY"}
-QCLASS_CODES = {1: "IN"}
+QNAME_CODES = {1: "A", 2: "NS", 5: "CNAME", 12: "PTR", 13: "HINFO", 15: "MX", 252: "AXFR", 255: "ANY",
+               "A": 1, "NS": 2, "CNAME": 5, "PTR": 12, "HINFO": 13, "MX": 15, "AXFR": 252, "ANY": 255}
+QCLASS_CODES = {1: "IN",
+                "IN": 1}
 ZONE_LIST = list(parse_zone_file(open("usaaa.ru")))
 
 
@@ -24,11 +26,12 @@ def get_mask_val(data, mask: str) -> int:
 
 
 def nice_hex(data):
-    return b" ".join(binascii.hexlify(data)[index * 2:index * 2 + 2] for index in range(len(data) // 2 + 1))
+    d = binascii.hexlify(data).decode()
+    return " ".join(d[i * 2:i * 2 + 2] for i in range(len(d) // 2))
 
 
 class DNSPacket:
-    def from_bytes(self, data, transport_protocol):
+    def __init__(self, data, transport_protocol):
         self.data = data
         # print(nice_hex(data))
         if transport_protocol.lower() == "tcp":
@@ -50,12 +53,14 @@ class DNSPacket:
         self.rcode = get_mask_val(right_options,                       "00001111")
         self.qdcount, self.ancount, self.nscount, self.arcount = struct.unpack("!HHHH", data[4:4 + 8])
         data = data[12:]
-
+        self.pointers = []
+        self.pointer = 12
         self.questions = []
         self.answers = []
         self.authority_records = []  # not supported
         self.addition_section = []  # not supported
         for index in range(self.qdcount):
+            self.pointers.append(self.pointer)
             qname = b""
             while True:
                 part_len = data[0]
@@ -63,36 +68,49 @@ class DNSPacket:
                     break
                 qname += data[1:1 + part_len] + b"."
                 data = data[1 + part_len:]
+                self.pointer += 1 + part_len
             data = data[1:]
+            self.pointer += 1
             qtype = QNAME_CODES[struct.unpack("!H", data[:2])[0]]
             qclass = QCLASS_CODES[struct.unpack("!H", data[2:4])[0]]
             self.questions.append((qname.decode(), qtype, qclass))
             data = data[4:]
+            if data:
+                self.data = self.data[:-len(data)]
 
-    @staticmethod
-    def pack_answer_record():
     def __str__(self):
         attrs = filter(lambda x: "__" not in x, dir(self))
         return "\n".join("{} = {}".format(attr, getattr(self, attr))
                          for attr in attrs if not getattr(getattr(self, attr), "__call__", False))
 
     def create_answer(self, zone_file):
-        for question in self.questions:
-            print(list(get_record(question[0], question[1], parse_zone_file(zone_file))))
+        for index in range(len(self.questions)):
+            for record in get_record(self.questions[index][0], self.questions[index][1], parse_zone_file(zone_file)):
+                qname = struct.pack("!H", self.pointers[index] | 49152)
+                qtype = struct.pack("!H", QNAME_CODES[record[1]])
+                qclass = struct.pack("!H", QCLASS_CODES[record[2]])
+                ttl = struct.pack("!I", record[3] - 1)
+                length = struct.pack("!H", 4)
+                if record[1] == "A":
+                    args = ("!BBBB",) + tuple(map(int, record[4].split(".")))
+                    rdata = struct.pack(*args)
+                else:
+                    raise ValueError("Bad record type {} not supported".format(record[1]))
+                self.answers.append(qname + qtype + qclass + ttl + length + rdata)
         data = bytearray(self.data)
         data[2] |= 128
         data[3] &= 127  # RCODE is here
-        # data[6:8] = struct.pack("!H", len(self.answers))
+        data[6:8] = struct.pack("!H", len(self.answers))
+        for answer in self.answers:
+            data.extend(answer)
+        return bytes(data)
 
 
 def process_udp_client(server_socket, data, address):
     try:
-        server_socket.sendto(data, address)
-        packet = DNSPacket()
-        packet.from_bytes(data, "UDP")
-        packet.create_answer(open("usaaa.ru"))
-        server_socket.sendto(data, address)
-        print(packet)
+        packet = DNSPacket(data, "UDP")
+        answer = packet.create_answer(open("usaaa.ru"))
+        server_socket.sendto(answer, address)
     except Exception:
         print(traceback.format_exc())
 

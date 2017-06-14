@@ -39,7 +39,7 @@ def get_record(domain_name, rtype, zone_list):
     for record in zone_list:
         if record[0] == rtype:
             if record[1]["domain_name"] == domain_name:
-                yield domain_name, rtype, "IN", record[1]["rdata"]
+                yield domain_name, rtype, "IN", record[1]["ttl"], record[1]["rdata"]
 
 
 def main():
