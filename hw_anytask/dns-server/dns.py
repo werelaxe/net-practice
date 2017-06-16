@@ -27,7 +27,6 @@ def get_aaaa_bytes(ipv6_addr: str):
     nums = len(list(c for c in ipv6_addr if c != ":"))
     pre = ipv6_addr.replace("::", "0" * (32 - nums)).replace(":", "")
     data = binascii.unhexlify(pre.encode())
-    print(nice_hex(data))
     return data
 
 
