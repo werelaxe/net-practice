@@ -1,6 +1,7 @@
 import re
 
 SUPPORTED_RECORDS = {"SOA", "NS", "A", "AAAA", "CNAME", "MX"}
+SUPPORTED_CLASSES = {"IN", "CS", "CH", "HS"}
 
 
 def parse_line(check_res):
@@ -9,8 +10,10 @@ def parse_line(check_res):
     for field in left:
         if field.isnumeric():
             record["ttl"] = int(field)
-        elif field != "IN":
+        elif field not in SUPPORTED_CLASSES:
             record["domain_name"] = field
+        else:
+            record["class"] = field
     record["rdata"] = ' '.join(right)
     return rtype, record
 
@@ -38,12 +41,4 @@ def get_record(domain_name, rtype, zone_list):
     for record in zone_list:
         if record[0] == rtype:
             if record[1]["domain_name"] == domain_name:
-                yield domain_name, rtype, "IN", record[1]["ttl"], record[1]["rdata"]
-
-
-def main():
-    parse_zone_file(open("usaaa.ru"))
-
-
-if __name__ == '__main__':
-    main()
+                yield domain_name, rtype, record[1]["class"], record[1]["ttl"], record[1]["rdata"]

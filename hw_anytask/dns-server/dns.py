@@ -6,17 +6,17 @@ import socket
 import struct
 import binascii
 from zone_file_parser import parse_zone_file, get_record
-import time
+import argparse
+import os
 
-DNS_DEFAULT_PORT = 53
-PORT = DNS_DEFAULT_PORT
 BUFFER_SIZE = 64 * 1024
 MAX_WORKERS = 256
 QNAME_CODES = {1: "A", 2: "NS", 5: "CNAME", 12: "PTR", 13: "HINFO", 15: "MX", 252: "AXFR", 255: "ANY",
                "A": 1, "NS": 2, "CNAME": 5, "PTR": 12, "HINFO": 13, "MX": 15, "AXFR": 252, "ANY": 255}
 QCLASS_CODES = {1: "IN",
                 "IN": 1}
-ZONE_LIST = list(parse_zone_file(open("usaaa.ru")))
+LENS = {"A": 4, "AAAA": 16}
+ZONE_LIST = list(parse_zone_file(open("usaaa.ru.dns")))
 
 
 def get_mask_val(data, mask: str) -> int:
@@ -42,7 +42,6 @@ class DNSPacket:
         self.id = struct.unpack("!H", data[:2])
         left_options = data[2]
         right_options = data[3]
-        # print(bin(left_options)[2:].zfill(8))
         self.qr = get_mask_val(left_options,                   "10000000")
         self.opcode = get_mask_val(left_options,               "01111000")
         self.authoritative_answer = get_mask_val(left_options, "00000100")
@@ -75,8 +74,8 @@ class DNSPacket:
             qclass = QCLASS_CODES[struct.unpack("!H", data[2:4])[0]]
             self.questions.append((qname.decode(), qtype, qclass))
             data = data[4:]
-            if data:
-                self.data = self.data[:-len(data)]
+        if data:
+            self.data = self.data[:-len(data)]
 
     def __str__(self):
         attrs = filter(lambda x: "__" not in x, dir(self))
@@ -106,61 +105,67 @@ class DNSPacket:
         return bytes(data)
 
 
-def process_udp_client(server_socket, data, address):
+def process_udp_client(server_socket, data, address, zone_file):
     try:
         packet = DNSPacket(data, "UDP")
-        answer = packet.create_answer(open("usaaa.ru"))
+        answer = packet.create_answer(zone_file)
         server_socket.sendto(answer, address)
     except Exception:
         print(traceback.format_exc())
 
 
-def start_dns_server_with_udp():
+def start_dns_server_with_udp(port, zone_file):
     with ThreadPoolExecutor(MAX_WORKERS) as client_handler:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_server_socket:
             udp_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            udp_server_socket.bind(("", PORT))
+            udp_server_socket.bind(("", port))
             while True:
                 data, address = udp_server_socket.recvfrom(BUFFER_SIZE)
                 print("Connection from: {}".format(address))
-                client_handler.submit(process_udp_client, udp_server_socket, data, address)
+                client_handler.submit(process_udp_client, udp_server_socket, data, address, zone_file)
 
 
-def process_tcp_client(client_connection):
+def process_tcp_client(client_connection, zone_file):
     try:
         data = client_connection.recv(BUFFER_SIZE)
-        client_connection.send(data)
-        packet = DNSPacket()
-        packet.from_bytes(data, "TCP")
-        print(packet)
+        packet = DNSPacket(data, "TCP")
+        client_connection.send(packet.create_answer(zone_file))
         client_connection.close()
     except Exception:
         print(traceback.format_exc())
 
 
-def start_dns_server_with_tcp():
+def start_dns_server_with_tcp(port, zone_file):
     with ThreadPoolExecutor(MAX_WORKERS) as client_handler:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_server_socket:
             tcp_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            tcp_server_socket.bind(("", PORT))
+            tcp_server_socket.bind(("", port))
             tcp_server_socket.listen(MAX_WORKERS)
             while True:
                 tcp_connection, address = tcp_server_socket.accept()
                 print("Connection from: {}".format(address))
-                client_handler.submit(process_tcp_client, tcp_connection)
-
-
-def wait_clients():
-    while True:
-        time.sleep(1)
-        print("Waiting. time: {}".format(time.time()))
+                client_handler.submit(process_tcp_client, tcp_connection, zone_file)
 
 
 def main():
-    with ThreadPoolExecutor(MAX_WORKERS) as server_handler:
-        server_handler.submit(start_dns_server_with_tcp)
-        server_handler.submit(start_dns_server_with_udp)
-        # server_handler.submit(wait_clients)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--port", dest="port", default=53, type=int, help="port for dns server")
+    parser.add_argument("-f", "--file-zone", dest="file_zone", help="zone file for opening")
+    parser.add_argument("fqdn", help="fully qualified domain name")
+    args = parser.parse_args()
+    port = args.port
+    fqdn = args.fqdn
+    filename_zone = "{}.dns".format(fqdn) if args.file_zone is None else args.file_zone
+    if not os.path.isfile(filename_zone):
+        print("File {} doesn't exist".format(filename_zone))
+        return
+    print("Start DNS server:\nFQDN = {}\nport = {}\nzone file = {}\n".format(fqdn, port, filename_zone))
+    with open(filename_zone) as zone_file:
+        zone_file_lines = zone_file.read().split("\n")
+        with ThreadPoolExecutor(MAX_WORKERS) as server_handler:
+            server_handler.submit(start_dns_server_with_tcp, port, zone_file_lines)
+            server_handler.submit(start_dns_server_with_udp, port, zone_file_lines)
+
 
 if __name__ == "__main__":
     main()
