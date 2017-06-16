@@ -1,0 +1,18 @@
+google.com.		59	IN	SOA	ns3.google.com. dns-admin.google.com. 159226502 900 900 1800 60
+google.com.		44	IN	A	173.194.222.139
+google.com.		44	IN	A	173.194.222.100
+google.com.		44	IN	A	173.194.222.113
+google.com.		44	IN	A	173.194.222.101
+google.com.		44	IN	A	173.194.222.102
+google.com.		44	IN	A	173.194.222.138
+google.com.		299	IN	AAAA	2a00:1450:4010:c01::66
+google.com.		86399	IN	NS	ns1.google.com.
+google.com.		86399	IN	NS	ns2.google.com.
+google.com.		86399	IN	NS	ns4.google.com.
+google.com.		86399	IN	NS	ns3.google.com.
+google.com. 	21600	IN	CNAME	nginx.usaaa.ru.
+google.com.		599	IN	MX	40 alt3.aspmx.l.google.com.
+google.com.		599	IN	MX	50 alt4.aspmx.l.google.com.
+google.com.		599	IN	MX	10 aspmx.l.google.com.
+google.com.		599	IN	MX	20 alt1.aspmx.l.google.com.
+google.com.		599	IN	MX	30 alt2.aspmx.l.google.com.

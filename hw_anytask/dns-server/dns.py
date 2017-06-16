@@ -5,18 +5,40 @@ from concurrent.futures import ThreadPoolExecutor
 import socket
 import struct
 import binascii
+
+import time
+
 from zone_file_parser import parse_zone_file, get_record
 import argparse
 import os
+import re
 
 BUFFER_SIZE = 64 * 1024
 MAX_WORKERS = 256
-QNAME_CODES = {1: "A", 2: "NS", 5: "CNAME", 12: "PTR", 13: "HINFO", 15: "MX", 252: "AXFR", 255: "ANY",
-               "A": 1, "NS": 2, "CNAME": 5, "PTR": 12, "HINFO": 13, "MX": 15, "AXFR": 252, "ANY": 255}
-QCLASS_CODES = {1: "IN",
-                "IN": 1}
+QNAME_CODES = {1: "A", 2: "NS", 5: "CNAME", 12: "PTR", 13: "HINFO", 15: "MX", 252: "AXFR", 255: "ANY", 28: "AAAA", 6: "SOA",
+               "A": 1, "NS": 2, "CNAME": 5, "PTR": 12, "HINFO": 13, "MX": 15, "AXFR": 252, "ANY": 255, "AAAA": 28, "SOA": 6}
+QCLASS_CODES = {1: "IN", 2: "CS", 3: "CH", 4: "HS",
+                "IN": 1, "CS": 2, "CH": 3, "HS": 4}
 LENS = {"A": 4, "AAAA": 16}
-ZONE_LIST = list(parse_zone_file(open("usaaa.ru.dns")))
+ZONE_LIST = list(parse_zone_file(open("google.com.dns")))
+
+
+def get_aaaa_bytes(ipv6_addr: str):
+    nums = len(list(c for c in ipv6_addr if c != ":"))
+    pre = ipv6_addr.replace("::", "0" * (32 - nums)).replace(":", "")
+    data = binascii.unhexlify(pre.encode())
+    print(nice_hex(data))
+    return data
+
+
+def encode_domain_name(domain_name: str):
+    data = bytearray()
+    while domain_name != "":
+        index = domain_name.find(".")
+        sub = domain_name[:index]
+        data.extend(struct.pack("!B", index) + sub.encode())
+        domain_name = domain_name[index + 1:]
+    return bytes(data + b"\x00")
 
 
 def get_mask_val(data, mask: str) -> int:
@@ -89,12 +111,34 @@ class DNSPacket:
                 qtype = struct.pack("!H", QNAME_CODES[record[1]])
                 qclass = struct.pack("!H", QCLASS_CODES[record[2]])
                 ttl = struct.pack("!I", record[3] - 1)
-                length = struct.pack("!H", 4)
                 if record[1] == "A":
                     args = ("!BBBB",) + tuple(map(int, record[4].split(".")))
                     rdata = struct.pack(*args)
+                elif record[1] == "AAAA":
+                    rdata = get_aaaa_bytes(record[4])
+                elif (record[1] == "NS") or (record[1] == "CNAME"):
+                    rdata = encode_domain_name(record[4])
+                elif record[1] == "MX":
+                    pref, dn = record[4].split()
+                    rdata = struct.pack("!H", int(pref)) + encode_domain_name(dn)
+                elif record[1] == "SOA":
+                    origin, contact, serial, refresh, retry, expire, minimum = record[4].split()
+                    origin_data = encode_domain_name(origin)
+                    contact_data = encode_domain_name(contact)
+                    serial_data = struct.pack("!I", int(serial))
+                    refresh_data = struct.pack("!I", int(refresh))
+                    retry_data = struct.pack("!I", int(retry))
+                    expire_data = struct.pack("!I", int(expire))
+                    minimum_data = struct.pack("!I", int(minimum))
+                    rdata = origin_data + contact_data + serial_data + refresh_data +\
+                            retry_data + expire_data + minimum_data
                 else:
                     raise ValueError("Bad record type {} not supported".format(record[1]))
+                if record[1] in LENS.keys():
+                    length = struct.pack("!H", LENS[record[1]])
+                else:
+                    length = struct.pack("!H", len(rdata))
+
                 self.answers.append(qname + qtype + qclass + ttl + length + rdata)
         data = bytearray(self.data)
         data[2] |= 128
@@ -110,6 +154,7 @@ def process_udp_client(server_socket, data, address, zone_file):
         packet = DNSPacket(data, "UDP")
         answer = packet.create_answer(zone_file)
         server_socket.sendto(answer, address)
+        print("{} record(s) was successfully sent to {}".format(len(packet.answers), address))
     except Exception:
         print(traceback.format_exc())
 
