@@ -1,3 +1,4 @@
+import pickle
 import re
 import socket
 import time
@@ -5,6 +6,7 @@ import argparse
 import sys
 import os
 import ctypes
+import ipaddress
 
 
 TRACEROUTE_PORT = 33434
@@ -13,41 +15,61 @@ WHOIS_PORT = 43
 LOCAL_IP_PATTERN = "192\.168(\.\d{1,3}){2}|10(\.\d{1,3}){3}|172\.16(\.\d{1,3}){2}"
 
 
+def memoized(func):
+    memory = {}
 
-def get_whois_addr(ip_addr):
-    res = whois_request(ip_addr)
-    return re.findall("refer.*", res)[0].split()[1]
+    def memo(*args, **kwargs):
+       hash = pickle.dumps((args, sorted(kwargs)))
+       if hash not in memory:
+           memory[hash] = func(*args,**kwargs)
+       return memory[hash]
+    return memo
+
+
+@memoized
+def get_final_whois_data(ip_addr, whois_addr=WHOIS_HOST):
+    data = whois_request(ip_addr, whois_addr)
+    if "whois:" in data:
+        new_whois_addr = re.findall("whois:.*", data)[0].split()[1]
+        if new_whois_addr != whois_addr:
+            return get_final_whois_data(ip_addr, new_whois_addr)
+    return data
 
 
 def is_local(ip_addr):
-    return re.match(LOCAL_IP_PATTERN, ip_addr) is not None
-
-
-def get_country_info(whois_response):
-    if "address" not in whois_response:
-        return ""
-    addresses = re.findall("address.*", whois_response)
-    final_result = ' '.join(addresses[-1].split()[1:])
-    return "{} ".format(final_result)
+    try:
+        return ipaddress.IPv4Address(ip_addr).is_private
+    except Exception:
+        return re.match(LOCAL_IP_PATTERN, ip_addr) is not None
 
 
 def get_as_info(whois_response):
     if "origin" not in whois_response:
         return ""
-    return re.findall("origin", whois_response)[0].split()[1].decode() + " "
+    return re.findall("origin:.*", whois_response)[0].split()[1]
 
 
 def get_ip_info(ip_addr):
     if is_local(ip_addr):
         return "local "
-    whois_response = whois_request(get_whois_addr(ip_addr))
-    return "{}{}".format(
-        get_as_info(whois_response),
-        get_country_info(whois_response))
+    whois_response = get_final_whois_data(ip_addr)
+    as_info = get_as_info(whois_response)
+    country_info = get_country_info(ip_addr)
+    if country_info is None:
+        return ""
+    if as_info == "":
+        return "{} ".format(country_info)
+    return "{}, {} ".format(as_info, country_info)
 
 
-def whois_gen(url: str):
-    with socket.create_connection((WHOIS_HOST, WHOIS_PORT)) as sock:
+def get_country_info(ip_addr):
+    data = get_final_whois_data(ip_addr).lower()
+    if "address" in data:
+        return " ".join(re.findall("address:.*", data)[0].split()[1:])
+
+
+def whois_gen(url: str, whois_address=WHOIS_HOST):
+    with socket.create_connection((whois_address, WHOIS_PORT)) as sock:
         sock.send(url.encode() + b"\r\n")
         data = b'0'
         while data:
@@ -55,8 +77,8 @@ def whois_gen(url: str):
             yield data.decode()
 
 
-def whois_request(url: str):
-    return "".join(whois_gen(url))
+def whois_request(url: str, whois_address=WHOIS_HOST):
+    return "".join(whois_gen(url, whois_address))
 
 
 def check_rights():
@@ -109,7 +131,7 @@ def ping_request(destination, ttl, packet_size, ipv4_adress):
             hop_addr = " * "
             ip_info = ""
         else:
-            ip_info = get_ip_info(hop_name)
+            ip_info = get_ip_info(hop_addr)
     return ttl, hop_name, hop_addr, ip_info, (node_finish_time - node_start_time) * 1000, hop_addr == destination
 
 
